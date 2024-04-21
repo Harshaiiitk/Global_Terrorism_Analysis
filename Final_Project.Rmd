@@ -1,0 +1,926 @@
+---
+title: "Final_Project"
+author: "Venkata Harsha"
+date: "2024-03-03"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+```
+
+```{r}
+#install.packages("tidyverse")
+library(tidyverse)
+```
+
+```{r}
+#install.packages("gridExtra")
+library(gridExtra)
+```
+
+```{r}
+#install.packages("readr")
+library(readr)
+#install.packages("ggmap")
+library(ggmap)
+#install.packages("rworldmap")
+library(rworldmap)
+```
+
+```{r}
+#install.packages("arules")
+library(arules)
+```
+
+```{r}
+#install.packages("arulesViz")
+library(arulesViz)
+```
+
+```{r}
+#install.packages("ggpubr")
+library(ggpubr)
+
+```
+
+```{r}
+#install.packages("car")
+library(car)
+```
+
+```{r}
+#install.packages("caret")
+library(caret)
+```
+
+```{r}
+#install.packages("forecast")
+library(forecast)
+```
+
+```{r}
+#install.packages("zoo")
+library(zoo)
+```
+
+```{r}
+#install.packages("ggfortify")
+library(ggfortify)
+```
+
+##0.1 Database information
+
+We're examining the Global Terrorism Database (GTD), an open-source dataset covering terrorist incidents worldwide from 1970 to 2016, comprising over 170,000 cases. (<https://www.kaggle.com/START-UMD/gtd>) The database is maintained and updated by researchers at the National Consortium for the Study of Terrorism and Responses to Terrorism (START) at the University of Maryland. For any unclear variable meanings, a quick definition will be provided in this report <http://start.umd.edu/gtd/downloads/Codebook.pdf>. Additionally, we'll utilize the United Nations population forecasts dataset to analyze terrorism trends alongside population metrics (<https://esa.un.org/unpd/wpp/Download/Standard/Population/>). Notably, the terrorism data has one year missing, which we've chosen to disregard as it doesn't affect the overall analysis.
+
+Our analysis will be guided by specific research questions, with data manipulation conducted prior to addressing each question in the corresponding code section.
+
+We'll begin by importing the data, reducing its size, and renaming variables for clarity.
+
+##0.2 Importing dataset
+
+```{r}
+fulldf <- read_csv("/Users/venkataharshapedada/Downloads/globalterrorismdb_0718dist.csv")
+```
+
+```{r}
+#variable_names <- names(fulldf)
+```
+
+```{r}
+#variable_names
+#str(fulldf)
+```
+
+```{r}
+fullpop <- read_csv("/Users/venkataharshapedada/Downloads/WPP2022_TotalPopulationBySex.csv")
+```
+
+```{r}
+column_names <- names(fullpop)
+column_names
+```
+
+```{r}
+#str(fullpop)
+```
+
+```{r}
+
+library(dplyr)
+```
+
+```{r}
+pop <- fullpop %>%
+  select(-MidPeriod, -PopMale, -PopFemale, -VarID)
+
+pop <- pop %>% 
+  filter(Time > 1969 & Variant == 'Medium' & Time < 2017) %>%
+  select(-Variant, -LocID)
+
+futurepop <- fullpop %>%
+  filter(Time >2016 & Variant == 'Medium') %>%
+  select(-Variant, -LocID, -MidPeriod, -PopMale, -PopFemale, -VarID)
+
+```
+
+##0.3 Data Cleaning
+
+We'll streamline our analysis by eliminating unnecessary variables and renaming others for clarity. We'll concentrate on a subset of variables to ensure the clarity of our analysis.
+
+###0.3.1 Variables of importance
+
+1.  iyear
+2.  imonth
+3.  iday
+4.  country_txt
+5.  region_txt
+6.  city
+7.  latitude
+8.  longitude
+9.  summary - event summary, what happened? when etc.
+10. multiple - was the attack part of a multiple attack event?
+11. attacktype1_txt
+12. targtype1_txt
+13. targsubtype1_txt
+14. gname - perpetrator group name
+15. weaptype1_txt
+16. nkill - confirmed fatalities of event
+17. nwound - number of non-fatal wounded of event
+18. nkillter - fatalities of perpetrator(s)
+
+###0.3.2 selecting vars of importance and renaming
+
+```{r}
+df <- fulldf %>%
+  select(iyear, imonth, iday, country_txt, region_txt, city, latitude, longitude, summary, multiple, attacktype1_txt, targtype1_txt, targsubtype1_txt, gname, weaptype1_txt, nkill, nwound, nkillter) 
+
+df <- df %>%
+  rename(year = iyear, month = imonth, day = iday, country = country_txt, region = region_txt, multiple_attack = multiple, attacktype = attacktype1_txt, target_type = targtype1_txt, target_sub_type = targsubtype1_txt, group_name = gname, weapon_type = weaptype1_txt)
+
+df <- df %>%
+  mutate(decade = 
+           ifelse(year<1980, '70s', 
+                  ifelse(year < 1990, '80s', 
+                         ifelse(year < 2000, '90s', 
+                                ifelse( year < 2010, '2000s', '2010s')))))
+
+df$decade <- factor(df$decade, levels=c("70s", "80s", "90s", "2000s", "2010s"))
+```
+
+# 1. Data Overview
+
+##1.1 Number of Terrorist Attacks
+
+```{r}
+ggplot(data = df, aes(x = year, fill = after_stat(count))) +
+  geom_histogram(binwidth = 1) +  # Adjust binwidth as needed
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = 'Terrorism attacks over time', fill = "Count")
+
+```
+
+There have been over 170,000 recorded terrorist attacks, and it appears that their frequency has increased over time.
+
+```{r}
+df %>%
+  summarise(nr_of_attacks = n())  
+```
+
+##1.2 Attack type Distribution
+
+```{r}
+ggplot(data = df, aes(x = attacktype, fill = after_stat(count))) + 
+  geom_histogram(stat = "count") +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +  # Change the color gradient as needed
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +   
+  labs(title = 'Terrorism attack type distribution', fill = "Count")
+
+```
+
+Bombings account for more than 80,000 incidents, making them the most prevalent type of attack. The second largest category is armed assault, with approximately 40,000 attacks.
+
+##1.3 Target Distribution
+
+Let's get an idea of what kind of targets terrorists hit.
+
+```{r}
+ggplot(data = df, aes(x = target_type, fill = decade)) +
+  geom_histogram(stat = 'count') +
+  scale_fill_brewer(palette = "Set4") +  # Change the color palette as needed
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = 'Target distribution of terrorism over time', fill = 'Decade')
+
+
+```
+
+```{r}
+df %>%
+  group_by(target_type) %>%
+  summarise(nr_of_attacks = n()) %>%
+  arrange(desc(nr_of_attacks)) %>%
+  head(n=10)
+```
+
+It appears that private citizens have become increasingly targeted. We'll delve deeper into this trend in question 2.6 for a more thorough analysis.
+
+#1.4 location of terrorism (region/country/city?)
+
+We aim to visualize the geographic distribution of terrorist attacks worldwide. To achieve this, we'll utilize the ggmap package.
+
+```{r}
+df2000 <- df %>%
+  filter(year > 2006)
+
+world <- borders("world", colour="gray50", fill="gray50") 
+
+```
+
+```{r}
+worldmap <- ggplot() + world + scale_y_continuous(limits=c(-55, 90))
+
+worldmap + 
+  geom_point(aes(x=df2000$longitude[df$nkill<51], y=df2000$latitude[df$nkill<51]), col='blue', alpha= 0.2) +
+  geom_point(aes(x=df2000$longitude[df$nkill>50], y=df2000$latitude[df$nkill>50]), col='red', size=2) +
+  labs(title='Location of terrorist attacks by severity')
+```
+
+Red dots will represent locations where terrorist attacks resulted in more than 50 deaths, while blue dots will indicate locations with fewer than 51 deaths.
+
+Additionally, we'll examine the top 10 locations for terrorist attacks, categorized by region, country, and city.
+
+```{r}
+df %>%
+  group_by(region) %>%
+  summarise( nr_of_attacks = n()) %>%
+  arrange(desc(nr_of_attacks)) %>%
+  head(n=10)
+```
+
+```{r}
+df %>%
+  group_by(country) %>%
+  summarise( nr_of_attacks = n()) %>%
+  arrange(desc(nr_of_attacks)) %>%
+  head(n=10)
+```
+
+```{r}
+df %>%
+  filter(city != 'Unknown') %>%
+  group_by(city) %>%
+  summarise( nr_of_attacks = n()) %>%
+  arrange(desc(nr_of_attacks)) %>%
+  head(n=10)
+```
+
+We'll start by reducing the dataset's size by grouping it by decade and selecting only the top 10,000 points for each decade. Additionally, to improve visibility, we'll further filter the dataset to include only those points with more than 300 attacks. Subsequently, we'll examine the distribution of terrorist groups worldwide.
+
+```{r}
+df500 <- df %>%
+  select(decade, latitude, longitude, group_name) %>%
+  group_by(decade) %>%
+  slice(1:10000)
+
+df500 <- df500 %>% 
+  group_by(group_name) %>% 
+  filter(n() >= 300 & group_name != "Unknown")
+
+worldmap + 
+  geom_point(aes(x=df500$longitude, y=df500$latitude, col=df500$group_name), size=2, position = 'jitter') +
+  labs(title='Location of terrorist attacks by group') +
+  theme(legend.position=c(0.5, -0.5))
+```
+
+The geographical spread is quite evident, especially concerning well-known terrorist groups.
+
+#1.5 distribution of terrorist groups
+
+who are doing these attacks
+
+```{r}
+#table
+top10_groups <- df %>%
+  filter(group_name != "Unknown") %>%
+  group_by(group_name) %>%
+  summarise(nr_of_attacks = n()) %>%
+  arrange(desc(nr_of_attacks)) %>%
+  head(n=10)
+
+#visual
+ggplot(data=top10_groups) +
+  stat_summary(aes(x=group_name, y=nr_of_attacks), geom="bar") +
+  theme(axis.text.x= element_text(angle=45, hjust=1)) +
+  labs(title='Terrorist attacks per group')
+
+
+```
+
+#2. Trends in terorrism
+
+##2.1 Has terrorism gone up?
+
+###2.1.1 Terrorism growth
+
+see below for decade breakdown - significant increase since 2010
+
+```{r}
+df %>%
+  group_by(decade) %>%
+  summarise(nr_of_attacks = n()) %>%
+  arrange(desc(nr_of_attacks)) %>%head(n=10)  
+```
+
+```{r}
+#visual
+ggplot(data=df, aes(x=year, fill=decade)) +
+  geom_histogram(stat='count') +  
+  theme(axis.text.x= element_text(angle=45, hjust=1)) +
+  labs(title='Terrorism growth over time')
+```
+
+##2.1.2 Take into account world population growth
+
+```{r}
+#get just the world population by year
+popworld <- pop %>%
+  filter(Location == "World") %>%
+  select(-Location)
+
+# Join to the dataframe based on year.
+df2 <- inner_join(df, popworld, by = c("year" = "Time"))
+
+# Plot
+p1 <- ggplot(data = df2, aes(x = year)) +
+  geom_histogram(aes(col = 'Attack Count'), bins = 46, fill = "brown") +  
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_continuous(breaks = seq(1970, 2016, 2))
+
+p1 + 
+  geom_line(aes(y = PopTotal / 500, col = 'Population Size'), linewidth = 2) + 
+  scale_y_continuous(sec.axis = sec_axis(~ . * 500000, name = "Population Size")) +
+  labs(y = "Attack Count", x = "Year", color = "Legend") +
+  theme(legend.position = c(0.5, 0.9)) +
+  scale_color_manual(values = c("red", "blue")) +  # Change line colors as needed
+  labs(title = 'Terrorism growth vs Population growth')
+
+```
+
+As depicted in the plot, there has been a noticeable surge in terrorism, particularly after 2010.
+
+##2.2 Locations of terrorism
+
+Middle East and N Africa (\~27% of total), South Asia (\~24%) and S America (11%) are the top three regions in terms of number of attacks. Iraq (\~12.9% of total), Pakistan,(\~8%), Afhganistan (\~6.6%), India(\~6.4%) and Colombia (4.7%) are the top five countries in terms of number of attacks.
+
+```{r}
+#table
+library(ggplot2)
+
+top20_countries <- df %>%
+  group_by(region, country) %>%
+  summarise(nr_of_attacks = n(), .groups = "drop_last") %>%
+  mutate(percent = nr_of_attacks / sum(nr_of_attacks)) %>%
+  arrange(desc(nr_of_attacks)) %>%
+  head(n = 20)
+
+# Visual by country
+ggplot(data = top20_countries) +
+  geom_bar(aes(x = country, y = nr_of_attacks, fill = region), stat = "identity") +
+  scale_fill_brewer(palette = "Paired") +  # Change the color palette as needed
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(title = 'Amount of terrorist attacks per country and region', fill = 'Region')
+
+```
+
+##2.3 Has terrorism become deadlier?
+
+Over half of all deaths by terrorist attack have occurred during bomb attacks. The next deadliest weapon grouping is "Firearms" responsibile for \~32% of all Terror attack deaths.
+
+```{r}
+#table
+weapon_lethality <- df %>%
+  filter(weapon_type != "Unknown") %>%
+  select(decade, weapon_type, nkill) %>%
+  group_by(decade, weapon_type, .drop = FALSE) %>%
+  summarise(nr_of_deaths = n(), .groups = "drop_last") %>%
+  top_n(n = 5, wt = nr_of_deaths) %>%
+  mutate(percent_deaths = (nr_of_deaths / sum(nr_of_deaths) * 100))
+
+# Visual by decade / weapon type
+ggplot(data = weapon_lethality, aes(x = decade, y = nr_of_deaths, col = weapon_type, group = weapon_type)) +
+  geom_line(size = 1.5, alpha = 0.5) +
+  scale_color_brewer(palette = "Dark2") +  # Change the color palette as needed
+  labs(title = 'Terrorism lethality by weapon over time')
+
+
+```
+
+##2.4 Activity of groups over time First we identify the top ten Terror Groups in terms of number of attacks
+
+```{r}
+top10_groups <- df %>%
+  filter(group_name != "Unknown") %>%
+  group_by(group_name) %>%
+  summarise(nr_of_attacks = n(), .groups = "drop_last") %>%
+  arrange(desc(nr_of_attacks)) %>%
+  head(n=10)
+
+top10_groups
+
+#table
+top10_groups_activity <- df %>%
+filter(df$group_name %in% c("Taliban", "Shining Path (SL)", "Islamic State of Iraq and the Levant (ISIL)", "Farabundo Marti National Liberation Front (FMLN)", "Al-Shabaab", "Irish Republican Army (IRA)", "Revolutionary Armed Forces of Colombia (FARC)", "New People's Army (NPA)", "Kurdistan Workers' Party (PKK)", "Boko Haram"))%>%  
+select(year, group_name)%>%
+group_by(year, group_name) %>%
+  summarise(nr_of_attacks = n(), .groups = "drop_last")%>%
+  arrange(desc(nr_of_attacks))%>%
+   top_n(n=10, wt=nr_of_attacks)
+
+#Visual by Top 10 Terror Group Activity  / decade since 1970
+ggplot(data=top10_groups_activity, aes(x=year, y=nr_of_attacks, col=group_name, group= group_name)) +
+  geom_line(size=1, alpha=0.5) + 
+  theme(legend.position="right")+
+  labs(title='Terrorist Group activity over time') +
+  theme(legend.position="bottom", legend.text=element_text(size=3.5))
+
+```
+
+The current spike in Terror Activity (since 2000) has been maintained primarily by 4 x Main Groups - Taliban - Boko Haram - NPA - ISIL FARC have shown a small spike in activity since 2000 and IRA and Shining Path have shown a decrease in Activity since 2000
+
+##2.5 Weapon choice over time Did technology growth change what weapons terrorist use?
+
+```{r}
+dfweapons <- df %>%
+  select(year, weapon_type, decade) %>%
+  filter(weapon_type != "Unknown")
+
+#table
+top15_weapons <- dfweapons %>%
+  group_by(decade, weapon_type) %>%
+  summarise(nr_of_attacks = n(), .groups = "drop_last") %>%
+  top_n(n=5, wt=nr_of_attacks) %>%
+  mutate(percent = nr_of_attacks/sum(nr_of_attacks)*100) %>%
+  arrange(decade, desc(nr_of_attacks))
+
+#visual
+ 
+ggplot(data = top15_weapons, aes(x = decade, y = percent, col = weapon_type, group = weapon_type)) +
+  geom_line(size = 1.5, alpha = 0.5) +
+  scale_color_brewer(palette = "Dark2") +  # Change the color palette as needed
+  labs(title = 'Weapon choice of terrorists over time')
+
+```
+
+It seems that explosives and firearmas have been consistently the most popular. The whole top3 of weapon choices seems to have stayed completely consistent over the years.
+
+##2.6 Target choice over time Have the targets changed? Have terrorists changed what targets they use?
+
+```{r}
+dftargets <- df %>%
+  select(year, target_type, target_sub_type, decade) %>%
+  filter(target_type != "Unknown")
+
+#table
+dftargetstop <- dftargets %>%
+  group_by(decade, target_type) %>%
+  summarise(nr_of_attacks = n(), .groups = "drop_last") %>%
+  top_n(n=5, wt=nr_of_attacks) %>%
+  arrange(decade, desc(nr_of_attacks))
+
+#visual
+ggplot(data=dftargetstop, aes(x=decade, y=nr_of_attacks, col=target_type, group= target_type)) +
+  geom_line(size=1.5, alpha=0.5)+
+  scale_color_brewer(palette = "Dark2") + 
+  labs(title='Terrorism targets over time')
+```
+
+From the data we an see that private citizens have become a way bigger target group than before. It seems that violence has escelated to this innocent group. Besides that the Military has become a bigger target over the decades.
+
+##2.7 Location vs Mortality
+
+```{r}
+#Mortality by Region
+regionmort <- df %>%
+  filter(nkill != 'Unknown') %>%
+  select(region, nkill, nwound, year, group_name, decade) %>%
+  group_by(region, year) %>%
+  summarise(total_deaths = sum(nkill), .groups = "drop_last")
+
+#Raw region amounts
+ggplot(data=regionmort, aes(x=region, y=total_deaths)) +
+  geom_histogram(stat='identity') +
+  theme(axis.text.x= element_text(angle=45, hjust=1))+
+  labs(title='Terrorism casualties per region')
+
+#and over time
+ggplot(data=regionmort, aes(x=year, y=total_deaths, col=region, group= region)) +
+  geom_line(size=1.5, alpha=0.5) +
+  labs(title='Terrorism casualties per region over time')
+
+```
+
+The Middle East and North Africa have had an immense increase of deaths from 2003 upwards with links in well with incraesed instability in the region during and after the Iraq war.
+
+#3. Has terrorism gone up over the past few decades - taking into account population growth?
+
+We have to take into account popoulation growth first. To do this we'll first check if population growth and amount of attacks per year are correlated.
+
+##3.1 Correlation analysis.
+
+```{r}
+#first reframe the data to get it grouped per year
+df3 <- df2 %>%
+  group_by(year) %>%
+  summarise(terrorist_attacks_count = n())
+
+df3 <- inner_join(df3, popworld, by = c("year" = "Time"))
+
+df3 <- df3 %>%
+  mutate(decade = 
+           ifelse(year<1980, '70s', 
+                  ifelse(year < 1990, '80s', 
+                         ifelse(year < 2000, '90s', 
+                                ifelse( year < 2010, '2000s', '2010s')))))
+
+
+df3$decade <- factor(df3$decade, levels=c("70s", "80s", "90s", "2000s", "2010s"))
+
+cor.test(df3$PopTotal, df3$terrorist_attacks_count, method="pearson")
+
+ggscatter(df3, y = "terrorist_attacks_count", x = "PopTotal", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          ylab = "Terrorist Attack Counts", xlab = "World Population")
+
+```
+
+It seems that there is a medium correlation (r=0.64, p\<0.05) for world population and terrorist attack counts. However, they seem to disconnect when the population reaches more than 5.8 billion. Our linear model doesn't explain the variance too well so perhaps we could try seeing if a polynomial model works better.
+
+##3.2 Are the amounts of attacks different over time? Lets do linear regression to see if the variance in amount of attacks can be explained merely by population growth.
+
+$$
+\large
+\begin{array}{l}
+H_0: \text{variance-terrorist attacks properly explained by population growth}  \\
+H_a: \text{variance-terrorist attacks not properly explained by population growth} 
+\end{array}
+$$
+
+###3.2.1 Linear Model
+
+```{r}
+m1 <- lm(data=df3, terrorist_attacks_count ~ PopTotal)
+summary(m1)
+#Adjusted R-squared: 0.397 with p<0.05.
+
+ggplot(data=df3, aes(x=PopTotal, y=terrorist_attacks_count)) +
+  geom_point() +
+  geom_smooth(method="lm",formula= y ~ x)+
+  scale_y_continuous(limits = c(-500, 17500))
+  
+```
+
+The Linear Model is significant but explains the variance in terrorist attacks count quite poorly with an adjusted R-squared of 0.397 (p\<0.05). This means we REJECT H0 as the variance is not properly explained by population growth, meaning there are other factors in play.
+
+###3.2.2 Polynomial regression
+
+What seemed to be the case in our linear was that after a while there was no linear relationship anymore as most of the points fell outside of the 95% conf interval of the fitted line. Let's see if we can better explain the data with a quadratic term of PopTotal. It should ofcourse be kept in mind that we are heavily overfitting the model by adding these polynomial terms. However, because we suspect a non-linear relationship based on our initial analysis its an interesting thing to see on what kind of order the terrorist attack count has diverted from normal growth through population gains. Beside, that we can try and making some predictions about future amount of terrorist attacks based on our better fitted model since the dataset lacks other interesting variables to predict terrorist attacks.
+
+```{r}
+m2 <- lm(data=df3, terrorist_attacks_count ~ PopTotal + I(PopTotal^2))
+summary(m2)
+#Adjusted R-squared: 0.536 with p<0.05.
+
+ggplot(data=df3, aes(x=PopTotal, y=terrorist_attacks_count)) +
+  geom_point() +
+  geom_smooth(method="lm",formula= y ~ x + I(x^2)) +
+  scale_y_continuous(limits = c(-500, 17500))
+```
+
+This already explains the variance in terrorist attack count much better with an adjusted R-squared of 0.536 (p\<0.05) but still most points fall outside of the confidence interval.
+
+###3.2.3 Third order Polynomial regression Lets see if we can make a better fit with higher order versions of the population variable.
+
+```{r}
+m3 <- lm(data=df3, terrorist_attacks_count ~ PopTotal + I(PopTotal^2) + I(PopTotal^3))
+summary(m3)
+#Adjusted R-squared: 0.8356 with p<0.05.
+
+ggplot(data=df3, aes(x=PopTotal, y=terrorist_attacks_count)) +
+  geom_point() +
+  geom_smooth(method="lm",formula= y ~ x + I(x^2) + I(x^3)) +
+  scale_y_continuous(limits = c(-500, 17500))
+```
+
+Again, even a better fit is achieved and again, overfitting is incredibly high right now. Let's see if we can see which of these models is better or worse through an ANOVA.
+
+###3.2.4 Model tests Because the above models are all nested we can use ANOVA to see which one is better.
+
+$$
+\Large
+\begin{array}{l}
+H_0: \text{SSE}_{m1} = \text{SSE}_{m2} = \text{SSE}_{m3}  \\
+H_a: \text{at least two SSE's are different} 
+\end{array}
+$$
+
+```{r}
+#visual, without confidence interval for visiblity
+ggplot(data=df3, aes(x=PopTotal, y=terrorist_attacks_count)) +
+  geom_point() +
+  geom_smooth(method="lm",formula= y ~ x, se=F) +
+  geom_smooth(method="lm",formula= y ~ x + I(x^2), se=F, col='green') +
+  geom_smooth(method="lm",formula= y ~ x + I(x^2) + I(x^3), se=F, col='red') +
+  scale_y_continuous(limits = c(-500, 17500))
+```
+
+Which of these models is better? First we compare model 1 and model 2.
+
+```{r}
+anova(m1, m2, test="F")
+#p<0.05 for model 2, meaning it's the better model. Is it also better than model 3?
+
+anova(m2, m3, test="F")
+#p<0.05 for model 3, meaning it's the best model.
+```
+
+The ANOVA at the end to compare the models doesn't explain too much as, yes, for this dataset the variance is better explained by the second and third model but we are overfitting the data massively at this point, especially since we only have an n=46 because we are looking at aggregates per year.
+
+Not too much can be inferred from this except that clearly populating growth has decoupled from the occurance of terrorist attacks and some other variable(s) have entered the fold in the past decade or so that have pushed up the amount of terrorist attacks.
+
+Before we start doing some predictions with our model, let's check some assumptions with the help of the 'car' package.
+
+##3.3 Regression Diagnostics
+
+###3.3.1 Outlier Tests One of the main reasons we suspect that population growth has decoupled as a linear predictor for terrorism attacks is because of the data from the last \~10 years. Let's see first what is deemed an outlier with a Bonferroni Outlier Test.
+
+```{r}
+outlierTest(m1)
+outlierTest(m2)
+outlierTest(m3)
+```
+
+Model 1 and Model 3 return a p\<0.05 outlier which is observation. Let's see that in a bit more detail.
+
+```{r}
+df3[44, ]
+```
+
+So the year 2014 is a definite outlier, this is also very clear in the plots but we shouldn't remove this as, since these our yearly aggregates, this is an important datapoint. Let's also view some influence plots to see what years are the most distortionairy in regards to our linear model. Grid arrange seems to not accept influence plots so they are not in 1 plot.
+
+```{r}
+infl1 <- influencePlot(m1, id.method = "noteworthy")
+```
+
+```{r}
+infl2 <- influencePlot(m2, id.method = "noteworthy")
+```
+
+```{r}
+infl3 <- influencePlot(m3, id.method = "noteworthy")
+```
+
+Constant recurring datapoints are 46 and 44, year 2016 and 2014 respectively.
+
+###3.3.2 Homoscedasticity We expect none of the models to fare well under this assumption due to the fact that terrorist attacks seem to have completely decoupled from population levels about \~10 years ago. Next to that our second and third model employ higher order polynomials to model linearly a non-linear relationship between the two variables. Below are a few spread level plots but it's quite obvious this assumption won't be met. Again, grid arrange can't handle plots with a numerical output.
+
+```{r}
+spreadLevelPlot(m1)
+```
+
+```{r}
+spreadLevelPlot(m2)
+```
+
+```{r}
+spreadLevelPlot(m3)
+```
+
+###3.3.3 Linearity
+
+It was already quite clear from our original correlation plot that linearity is absent, this is why we added in nested polynomials, however it might still be interesting to see how the points are distributed in the two models with more than 1 independent variable.
+
+```{r}
+library(gridExtra)
+
+# Create data frames for plotting
+data_m2 <- data.frame(predicted = predict(m2), residuals = rstandard(m2))
+data_m3 <- data.frame(predicted = predict(m3), residuals = rstandard(m3))
+
+# Create plots using ggplot
+lin2 <- ggplot(data = data_m2, aes(x = predicted, y = residuals)) +
+  geom_point() +
+  geom_hline(yintercept = 0, colour = "blue", alpha = 0.5)
+
+lin3 <- ggplot(data = data_m3, aes(x = predicted, y = residuals)) +
+  geom_point() +
+  geom_hline(yintercept = 0, colour = "blue", alpha = 0.5)
+
+# Arrange plots using grid.arrange
+grid.arrange(lin2, lin3, nrow = 1)
+
+
+```
+
+As we can see they both lack linearity which is exactly as expected as we added in non-linear elements through the nested polynomials purely because we spotted a partly non-linear relationship in the first model.
+
+###3.3.4 Independence of residuals Let's check the independence of residuals with the help of a Durbin Watson test. Unfortunately since our data is essentially 'panel data', specifically Time Series, since it's measurements over time from the same group (the world) the standard car packaged DWtest is not going to be useful. It will always tell us that the errors are autocorrelated.
+
+```{r}
+durbinWatsonTest(m1)
+```
+
+```{r}
+durbinWatsonTest(m2)
+```
+
+```{r}
+durbinWatsonTest(m3)
+```
+
+As expected the we reject the H0 three times with p=0.
+
+###3.3.5 multicollinearity
+
+Since we are working with nested polynomial models this diagnostic is also going to be less relevant as multicollinearity will be a thing.
+
+```{r}
+vif(m2)
+```
+
+```{r}
+vif(m3)
+```
+
+As expected the variance inflation factors are really high and normally this would mean dropping the extra variables. But since this is the rule only fro *linear combinations* of variables our model is exempt.
+
+##3.4 Model validation and forecasting
+
+###3.4.1 k-fold cross-validation We can validate our models to see whether adding the polynomials of world population improved our predictive power. We'll be using k-fold validation to do so. First we'll set a seed for reproducibility, we won't divy up the data in a test and train set for now since this is all the *real data* we have.
+
+```{r}
+set.seed(42)
+```
+
+Now let's use Caret for training the model with cross validation.
+
+```{r}
+trainmethod <- trainControl(method="cv", number=5, returnData=TRUE, returnResamp='all')
+
+model1 <- train(data=df3, terrorist_attacks_count ~ PopTotal, method='lm', trControl=trainmethod)
+model2 <- train(data=df3, terrorist_attacks_count ~ PopTotal + I(PopTotal^2), method='lm', trControl=trainmethod)
+model3 <- train(data=df3, terrorist_attacks_count ~ PopTotal + I(PopTotal^2) + I(PopTotal^3), method='lm', trControl=trainmethod)
+```
+
+Let's analyse our obtained models. We don't use summarise() on the cross validated models because it seems that base-r function can't read the cross-validation information and just outputs the original r-squared values.
+
+```{r}
+model1$resample
+```
+
+```{r}
+model1
+```
+
+```{r}
+model2$resample
+```
+
+```{r}
+model2
+```
+
+```{r}
+model3$resample
+```
+
+```{r}
+model3
+```
+
+*model1: Ajusted R-squared of 0.57* model2: Ajusted R-squared of 0.50 \*model3: Ajusted R-squared of 0.79
+
+The adjust r-squared has shifted up for model 1 (0.4 -\> 0.49) while model 2 and model 3 shifted down (0.54 -\> 0.50 and 0.84 -\> 0.79 respectively)
+
+###3.4.2 standard forecasting
+
+We can try using our slightly overfitted models to predict the amount of future terrorism attacks based on future PopTotal given by the United Nations predicted population dataset.
+
+```{r}
+#First make a dataframe with empty terrorist values with the project UN populations
+futurepopworld <- futurepop %>%
+  filter(Location == "World") %>%
+  select(-Location)
+
+futurepopworld$terrorist_attacks_count <- NA
+
+#duplicate for three models
+fpopworld1 <- futurepopworld
+fpopworld2 <- futurepopworld
+fpopworld3 <- futurepopworld
+
+#predict new values of terrorist_attacks_count based on the three models.
+fpopworld1$terrorist_attacks_count <- predict(object=m1, newdata=fpopworld1)
+
+fpopworld2$terrorist_attacks_count <- predict(object=m2, newdata=fpopworld2)
+
+fpopworld3$terrorist_attacks_count <- predict(object=m3, newdata=fpopworld3)
+
+#filter until 2040
+fpopworld1 <- filter(fpopworld1, Time < 2041)
+fpopworld2 <- filter(fpopworld2, Time < 2041)
+fpopworld3 <- filter(fpopworld3, Time < 2041)
+
+#visual
+ggplot() +
+  geom_point(data=df3, aes(x=year, y=terrorist_attacks_count, col='Original Data')) +
+  geom_point(data=fpopworld1, aes(x=Time, y=terrorist_attacks_count, col='Model 1')) +
+  geom_point(data=fpopworld2, aes(x=Time, y=terrorist_attacks_count, col='2nd order polynomial - Model 2')) +
+  geom_point(data=fpopworld3, aes(x=Time, y=terrorist_attacks_count, col='3rd order polynomial - Model 3')) +
+  labs(title='Predicted amount of terrorist attacks') +
+  theme(legend.position = c(0.2, 0.85)) +
+  labs(x= 'Year', y= 'Number of Terrorist Attacks', colour = 'Legend') +
+  scale_x_continuous(breaks = seq(1970, 2040, 2)) +
+  theme(axis.text.x= element_text(angle=45, hjust=1))
+```
+
+As can be confirmed in the graph the 2nd order polynomial seems to be giving the most accurate prediction based on the upswing from the past decades but assuming that's just a blip in the data the first model gives the best prediction. To test this correctly we would have to compare it with new data coming in for the coming years. However, with ISIL currently being 'defeated' we suspect that the Model 1 prediction will be most correct.
+
+Besides all that it should also be noted that due to the fact that the three models are all descriptive regression models made with the goal of obtaining a best fit, *all* predictions based on data outside of the range of the original data are pure extrapolation. This can be useful for short term prediction but in actuallity this falls apart quite fast with extremely wide confidence intervals. Due to this we decided to use the 'forecast' package to forecast the data as pure time-series data to forecast percentage changes instead of raw numbers.
+
+###3.4.3 Time-Series Forecasting
+
+To do this we first have to transform the dataset into a time-serie frame. Let's also impute the missing year (1993) with an average value of the preceding and following year so that we can convert to time-series.
+
+```{r}
+#for the missing value
+df3[df3$year == 1992 | df3$year == 1994, ]
+
+```
+
+```{r}
+newrow <- data_frame(year=1993, terrorist_attacks_count=(5073+3458)/2-0.5, PopTotal=(5504401+5670320)/2)
+
+df4 <- df3 %>%
+  select(-decade) %>%
+  bind_rows(newrow)
+
+df4 <- df4 %>%
+  arrange(year)
+
+values <- df4[, c(2,11)]
+
+ts1 <- ts(values, start=1970,end=2016,frequency=1)
+
+scaled_ts1 <- scale(ts1)
+
+percent_changes <- diff(ts1)/ts1[-nrow(ts1),] * 100
+```
+
+So now we have a time-series data frame with percent changes. Let's visualize how that looks. Because Ggplot can't out of the box handle ts objects we're using ggfortify.
+
+```{r}
+autoplot(scaled_ts1) 
+```
+
+```{r}
+autoplot(percent_changes)
+```
+
+Let's now use the forecast package to forecast this time series. First we need to build a time series linear model.
+
+```{r}
+tm1 <- tslm(terrorist_attacks_count ~ PopTotal, data=ts1)
+
+tm2 <- tslm(terrorist_attacks_count ~ PopTotal + I(PopTotal^2), data=ts1)
+
+tm3 <- tslm(terrorist_attacks_count ~ PopTotal + I(PopTotal^2) + I(PopTotal^3), data=ts1)
+
+futurepopworld4 <- futurepopworld %>%
+  filter(Time < 2041)
+
+f1 <- forecast(tm1, newdata=futurepopworld4, level=c(60, 70, 80, 95))
+f2 <- forecast(tm2, newdata=futurepopworld4, level=c(60, 70, 80, 95))
+f3 <- forecast(tm3, newdata=futurepopworld4, level=c(60, 70, 80, 95))
+
+plot(f1, ylab = 'nr of terrorist attacks', xlab = 'Year', sub = 'linear model : Attacks ~ Population')
+
+
+
+```
+
+```{r}
+plot(f2, ylab = 'nr of terrorist attacks', xlab = 'Year', sub = 'linear model : Attacks ~ Population + Pop^2')
+```
+
+```{r}
+plot(f3, ylab = 'nr of terrorist attacks', xlab = 'Year', sub = 'linear model : Attacks ~ Population + Pop^2 + Pop^3')
+```
+
+These three forecasts show the difficulty and issues that arise when forecasting outside of the fitted model. The 4 different colored confidence intervals show how unsure the forecast is. From the outside in the confidence intervals for the colored bands are: 95%, 80%, 70% and 60%.
