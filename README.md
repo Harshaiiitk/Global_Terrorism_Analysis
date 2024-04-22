@@ -1,4 +1,4 @@
-**DPA - CS 571 (Final Project)**
+**DPA - CSP 571 (Final Project)**
 
 **Spring 2024**
 
