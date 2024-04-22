@@ -1,8 +1,8 @@
-**DPA - CS 571 (Final Project)
+**DPA - CS 571 (Final Project)**
 
-Spring 2024**
+**Spring 2024**
 
-**GLOBAL TERRORISM ANALYSIS **
+**GLOBAL TERRORISM ANALYSIS**
 
 Venkata Harsha Pedada – A20517172 
 
